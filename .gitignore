@@ -36,3 +36,5 @@ next-env.d.ts
 # database
 *.db
 /uploads/
+vaultr.db
+node_modules
