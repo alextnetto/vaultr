@@ -80,11 +80,12 @@ export default function ViewSharePage() {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [submittingPassword, setSubmittingPassword] = useState(false);
 
   const countdown = useCountdown(expiresAt);
 
-  const fetchShare = useCallback(async () => {
-    const key = window.location.hash.slice(1);
+  const fetchShare = useCallback(async (pw?: string) => {
+    const key = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
     if (!key) {
       setError("Invalid link — decryption key missing.");
       setLoading(false);
@@ -92,11 +93,33 @@ export default function ViewSharePage() {
     }
 
     try {
-      const res = await fetch(`/api/shares/${id}?key=${key}`);
+      const res = await fetch(`/api/shares/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, password: pw }),
+      });
       const json = await res.json();
 
       if (res.status === 410) {
         setExpired(true);
+        setLoading(false);
+        return;
+      }
+
+      if (res.status === 401 && json.requiresPassword) {
+        setRequiresPassword(true);
+        setExpiresAt(json.expiresAt);
+        setLoading(false);
+        return;
+      }
+
+      if (res.status === 403) {
+        if (pw) {
+          setPasswordError("Incorrect password");
+          setSubmittingPassword(false);
+          return;
+        }
+        setError(json.error || "Access denied");
         setLoading(false);
         return;
       }
@@ -107,19 +130,14 @@ export default function ViewSharePage() {
         return;
       }
 
-      if (json.requiresPassword) {
-        setRequiresPassword(true);
-        setExpiresAt(json.expiresAt);
-        setLoading(false);
-        return;
-      }
-
       setData(json);
       setExpiresAt(json.expiresAt);
+      setRequiresPassword(false);
     } catch {
       setError("Failed to load share");
     } finally {
       setLoading(false);
+      setSubmittingPassword(false);
     }
   }, [id]);
 
@@ -128,38 +146,9 @@ export default function ViewSharePage() {
   }, [fetchShare]);
 
   async function submitPassword() {
-    const key = window.location.hash.slice(1);
     setPasswordError("");
-
-    try {
-      const res = await fetch(`/api/shares/${id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, key }),
-      });
-      const json = await res.json();
-
-      if (res.status === 410) {
-        setExpired(true);
-        return;
-      }
-
-      if (res.status === 403) {
-        setPasswordError("Incorrect password");
-        return;
-      }
-
-      if (!res.ok) {
-        setPasswordError(json.error || "Error");
-        return;
-      }
-
-      setData(json);
-      setExpiresAt(json.expiresAt);
-      setRequiresPassword(false);
-    } catch {
-      setPasswordError("Failed to verify password");
-    }
+    setSubmittingPassword(true);
+    await fetchShare(password);
   }
 
   async function copyValue(label: string, value: string) {
@@ -168,25 +157,24 @@ export default function ViewSharePage() {
     setTimeout(() => setCopiedField(null), 2000);
   }
 
-  // Loading
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header />
+        <ViewHeader />
         <main className="flex-1 flex items-center justify-center">
-          <div className="animate-pulse text-muted-foreground">
-            Decrypting...
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            <p className="text-muted-foreground">Decrypting...</p>
           </div>
         </main>
       </div>
     );
   }
 
-  // Expired
   if (expired) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header />
+        <ViewHeader />
         <main className="flex-1 flex items-center justify-center p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
@@ -213,11 +201,10 @@ export default function ViewSharePage() {
     );
   }
 
-  // Error
   if (error) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header />
+        <ViewHeader />
         <main className="flex-1 flex items-center justify-center p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
@@ -233,11 +220,10 @@ export default function ViewSharePage() {
     );
   }
 
-  // Password Gate
   if (requiresPassword) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header />
+        <ViewHeader />
         <main className="flex-1 flex items-center justify-center p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
@@ -250,7 +236,7 @@ export default function ViewSharePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!countdown.expired && (
+              {expiresAt > 0 && !countdown.expired && (
                 <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
                   <span>Expires in {countdown.label}</span>
@@ -281,8 +267,12 @@ export default function ViewSharePage() {
               {passwordError && (
                 <p className="text-sm text-destructive">{passwordError}</p>
               )}
-              <Button className="w-full" onClick={submitPassword}>
-                Unlock
+              <Button
+                className="w-full"
+                onClick={submitPassword}
+                disabled={submittingPassword || !password}
+              >
+                {submittingPassword ? "Unlocking..." : "Unlock"}
               </Button>
             </CardContent>
           </Card>
@@ -291,12 +281,11 @@ export default function ViewSharePage() {
     );
   }
 
-  // Data View
   if (!data) return null;
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      <ViewHeader />
       <main className="flex-1 flex items-start justify-center p-4 pt-8">
         <div className="w-full max-w-lg space-y-4">
           <Card>
@@ -357,7 +346,7 @@ export default function ViewSharePage() {
           <div className="rounded-lg border bg-muted/50 p-3 space-y-1.5 text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <Lock className="h-3 w-3" />
-              Data was encrypted with AES-256-GCM and decrypted in your browser
+              Data was encrypted with AES-256-GCM and decrypted on the server
             </div>
             <div className="flex items-center gap-1.5">
               <Clock className="h-3 w-3" />
@@ -371,11 +360,11 @@ export default function ViewSharePage() {
   );
 }
 
-function Header() {
+function ViewHeader() {
   return (
     <header className="border-b">
       <div className="container mx-auto flex items-center justify-between h-14 px-4">
-        <a href="/" className="flex items-center gap-2">
+        <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <Shield className="h-6 w-6 text-primary" />
           <span className="font-bold text-lg">Vaultr</span>
         </a>
