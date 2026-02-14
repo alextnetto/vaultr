@@ -1,54 +1,53 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getDb, saveDb } from "@/lib/db";
-import { generateId, encrypt, hashPassword } from "@/lib/crypto";
-import { randomBytes } from "crypto";
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import bcrypt from "bcryptjs";
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { fields, expiresIn, password, files } = body;
-
-    if (!fields || !Array.isArray(fields) || fields.length === 0) {
-      return NextResponse.json({ error: "At least one field is required" }, { status: 400 });
-    }
-
-    const id = generateId();
-    const encryptionKey = randomBytes(32).toString("hex");
-
-    const dataToEncrypt = JSON.stringify(fields);
-    const { encrypted, iv, tag } = encrypt(dataToEncrypt, encryptionKey);
-
-    const now = Math.floor(Date.now() / 1000);
-    const expiresAt = now + (expiresIn || 3600);
-    const passwordHash = password ? hashPassword(password) : null;
-
-    const db = await getDb();
-    db.run(
-      `INSERT INTO shares (id, encrypted_data, iv, auth_tag, password_hash, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, encrypted, iv, tag, passwordHash, expiresAt, now]
-    );
-
-    if (files && Array.isArray(files)) {
-      for (const file of files) {
-        const fileId = generateId();
-        db.run(
-          `INSERT INTO files (id, share_id, filename, mimetype, data) VALUES (?, ?, ?, ?, ?)`,
-          [fileId, id, file.filename, file.mimetype, file.data]
-        );
-      }
-    }
-
-    saveDb(db);
-
-    return NextResponse.json({
-      id,
-      key: encryptionKey,
-      expiresAt,
-      hasPassword: !!password,
-    });
-  } catch (error) {
-    console.error("Error creating share:", error);
-    return NextResponse.json({ error: "Failed to create share" }, { status: 500 });
+export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const userId = (session.user as any).id;
+  const { fieldIds, password, expiresIn } = await req.json();
+
+  // Calculate expiry
+  const expiresAt = new Date();
+  switch (expiresIn) {
+    case "1h": expiresAt.setHours(expiresAt.getHours() + 1); break;
+    case "24h": expiresAt.setHours(expiresAt.getHours() + 24); break;
+    case "7d": expiresAt.setDate(expiresAt.getDate() + 7); break;
+    case "30d": expiresAt.setDate(expiresAt.getDate() + 30); break;
+    default: expiresAt.setHours(expiresAt.getHours() + 24);
+  }
+
+  const hashedPassword = password ? await bcrypt.hash(password, 10) : null;
+
+  const share = await prisma.share.create({
+    data: {
+      userId,
+      fieldIds: JSON.stringify(fieldIds),
+      password: hashedPassword,
+      expiresAt,
+    },
+  });
+
+  return NextResponse.json({ id: share.id, expiresAt: share.expiresAt });
+}
+
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const userId = (session.user as any).id;
+  const shares = await prisma.share.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return NextResponse.json(shares);
 }

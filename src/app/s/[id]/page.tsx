@@ -1,375 +1,249 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import {
-  Shield,
-  Lock,
-  Clock,
-  AlertTriangle,
-  Eye,
-  EyeOff,
-  Copy,
-  Check,
-  XCircle,
+  Shield, Lock, Clock, AlertTriangle,
+  User, FileText, Phone, CreditCard, Eye
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ThemeToggle } from "@/components/theme-toggle";
 
-interface ShareField {
+type SharedField = {
+  id: string;
+  category: string;
   label: string;
   value: string;
-  type: string;
-}
+};
 
-interface ShareData {
-  fields: ShareField[];
-  expiresAt: number;
-  createdAt: number;
-  viewCount: number;
-}
+const CATEGORY_ICONS: Record<string, any> = {
+  identity: User,
+  documents: FileText,
+  contact: Phone,
+  financial: CreditCard,
+};
 
-function useCountdown(expiresAt: number) {
-  const [now, setNow] = useState(Math.floor(Date.now() / 1000));
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setNow(Math.floor(Date.now() / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const remaining = Math.max(0, expiresAt - now);
-  const expired = remaining <= 0;
-
-  const days = Math.floor(remaining / 86400);
-  const hours = Math.floor((remaining % 86400) / 3600);
-  const minutes = Math.floor((remaining % 3600) / 60);
-  const seconds = remaining % 60;
-
-  let label = "";
-  if (days > 0) label = `${days}d ${hours}h ${minutes}m`;
-  else if (hours > 0) label = `${hours}h ${minutes}m ${seconds}s`;
-  else if (minutes > 0) label = `${minutes}m ${seconds}s`;
-  else label = `${seconds}s`;
-
-  return { remaining, expired, label };
-}
+const CATEGORY_LABELS: Record<string, string> = {
+  identity: "Identity",
+  documents: "Documents",
+  contact: "Contact",
+  financial: "Financial",
+};
 
 export default function ViewSharePage() {
-  const params = useParams();
-  const id = params.id as string;
-
-  const [loading, setLoading] = useState(true);
+  const { id } = useParams();
+  const [fields, setFields] = useState<SharedField[]>([]);
+  const [expiresAt, setExpiresAt] = useState("");
   const [error, setError] = useState("");
   const [expired, setExpired] = useState(false);
-  const [requiresPassword, setRequiresPassword] = useState(false);
-  const [expiresAt, setExpiresAt] = useState(0);
-  const [data, setData] = useState<ShareData | null>(null);
+  const [passwordRequired, setPasswordRequired] = useState(false);
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [passwordError, setPasswordError] = useState("");
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [submittingPassword, setSubmittingPassword] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [timeLeft, setTimeLeft] = useState("");
 
-  const countdown = useCountdown(expiresAt);
-
-  const fetchShare = useCallback(async (pw?: string) => {
-    const key = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
-    if (!key) {
-      setError("Invalid link — decryption key missing.");
-      setLoading(false);
-      return;
-    }
-
+  const fetchShare = async (pwd?: string) => {
+    setLoading(true);
+    setError("");
     try {
-      const res = await fetch(`/api/shares/${id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, password: pw }),
-      });
-      const json = await res.json();
+      const url = pwd ? `/api/shares/${id}?password=${encodeURIComponent(pwd)}` : `/api/shares/${id}`;
+      const res = await fetch(url);
+      const data = await res.json();
 
-      if (res.status === 410) {
+      if (data.expired) {
         setExpired(true);
-        setLoading(false);
-        return;
+        setError(data.error);
+      } else if (data.passwordRequired) {
+        setPasswordRequired(true);
+        if (data.error) setError(data.error);
+        if (data.expiresAt) setExpiresAt(data.expiresAt);
+      } else if (data.fields) {
+        setFields(data.fields);
+        setExpiresAt(data.expiresAt);
+        setPasswordRequired(false);
+      } else if (data.error) {
+        setError(data.error);
       }
-
-      if (res.status === 401 && json.requiresPassword) {
-        setRequiresPassword(true);
-        setExpiresAt(json.expiresAt);
-        setLoading(false);
-        return;
-      }
-
-      if (res.status === 403) {
-        if (pw) {
-          setPasswordError("Incorrect password");
-          setSubmittingPassword(false);
-          return;
-        }
-        setError(json.error || "Access denied");
-        setLoading(false);
-        return;
-      }
-
-      if (!res.ok) {
-        setError(json.error || "Failed to load share");
-        setLoading(false);
-        return;
-      }
-
-      setData(json);
-      setExpiresAt(json.expiresAt);
-      setRequiresPassword(false);
     } catch {
       setError("Failed to load share");
     } finally {
       setLoading(false);
-      setSubmittingPassword(false);
     }
-  }, [id]);
+  };
 
   useEffect(() => {
     fetchShare();
-  }, [fetchShare]);
+  }, [id]); // eslint-disable-line
 
-  async function submitPassword() {
-    setPasswordError("");
-    setSubmittingPassword(true);
-    await fetchShare(password);
-  }
-
-  async function copyValue(label: string, value: string) {
-    await navigator.clipboard.writeText(value);
-    setCopiedField(label);
-    setTimeout(() => setCopiedField(null), 2000);
-  }
+  // Countdown timer
+  useEffect(() => {
+    if (!expiresAt) return;
+    const update = () => {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft("Expired");
+        setExpired(true);
+        return;
+      }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      if (d > 0) setTimeLeft(`${d}d ${h}h ${m}m`);
+      else if (h > 0) setTimeLeft(`${h}h ${m}m ${s}s`);
+      else setTimeLeft(`${m}m ${s}s`);
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <ViewHeader />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-            <p className="text-muted-foreground">Decrypting...</p>
-          </div>
-        </main>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/30">
+        <div className="animate-pulse flex items-center gap-2 text-muted-foreground">
+          <Shield className="h-6 w-6" />
+          <span>Loading shared data...</span>
+        </div>
       </div>
     );
   }
 
   if (expired) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <ViewHeader />
-        <main className="flex-1 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
-            <CardHeader className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/30">
-                <AlertTriangle className="h-8 w-8 text-orange-600 dark:text-orange-400" />
-              </div>
-              <CardTitle className="text-2xl">Link Expired</CardTitle>
-              <CardDescription>
-                This shared data has expired and been permanently deleted.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                className="w-full"
-                variant="outline"
-                onClick={() => (window.location.href = "/")}
-              >
-                Create New Share
+      <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-background to-muted/30">
+        <Card className="max-w-md w-full text-center animate-fade-in">
+          <CardContent className="py-12">
+            <AlertTriangle className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+            <h2 className="text-2xl font-bold mb-2">Share Expired</h2>
+            <p className="text-muted-foreground mb-6">
+              This shared data is no longer available. The link has expired or been revoked.
+            </p>
+            <Link href="/">
+              <Button className="gap-2">
+                <Shield className="h-4 w-4" />
+                Create Your Own Vault
               </Button>
-            </CardContent>
-          </Card>
-        </main>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  if (error) {
+  if (passwordRequired) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <ViewHeader />
-        <main className="flex-1 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
-            <CardHeader className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-                <XCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+      <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-background to-muted/30">
+        <Card className="max-w-md w-full animate-fade-in">
+          <CardHeader className="text-center">
+            <div className="mx-auto p-3 rounded-full bg-primary/10 w-fit mb-2">
+              <Lock className="h-8 w-8 text-primary" />
+            </div>
+            <CardTitle>Password Protected</CardTitle>
+            <CardDescription>This share requires a password to view</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {error && (
+              <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm text-center">
+                {error}
               </div>
-              <CardTitle className="text-2xl">Error</CardTitle>
-              <CardDescription>{error}</CardDescription>
-            </CardHeader>
-          </Card>
-        </main>
-      </div>
-    );
-  }
-
-  if (requiresPassword) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <ViewHeader />
-        <main className="flex-1 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
-            <CardHeader className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-                <Lock className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-              </div>
-              <CardTitle className="text-2xl">Password Required</CardTitle>
-              <CardDescription>
-                This share is protected. Enter the password to view.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {expiresAt > 0 && !countdown.expired && (
-                <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>Expires in {countdown.label}</span>
-                </div>
-              )}
-              <div className="relative">
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                fetchShare(password);
+              }}
+            >
+              <div className="space-y-4">
                 <Input
-                  type={showPassword ? "text" : "password"}
+                  type="password"
                   placeholder="Enter password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submitPassword()}
+                  autoFocus
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                <Button type="submit" className="w-full gap-2">
+                  <Eye className="h-4 w-4" />
+                  View Data
                 </Button>
               </div>
-              {passwordError && (
-                <p className="text-sm text-destructive">{passwordError}</p>
-              )}
-              <Button
-                className="w-full"
-                onClick={submitPassword}
-                disabled={submittingPassword || !password}
-              >
-                {submittingPassword ? "Unlocking..." : "Unlock"}
-              </Button>
-            </CardContent>
-          </Card>
-        </main>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  if (!data) return null;
+  // Group fields by category
+  const categories = Array.from(new Set(fields.map(f => f.category)));
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <ViewHeader />
-      <main className="flex-1 flex items-start justify-center p-4 pt-8">
-        <div className="w-full max-w-lg space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
+      <div className="container px-4 mx-auto max-w-2xl py-8 space-y-6">
+        {/* Header */}
+        <div className="text-center space-y-2 animate-fade-in">
+          <div className="inline-flex items-center gap-2 rounded-full border bg-muted px-4 py-1.5 text-sm">
+            <Shield className="h-3.5 w-3.5" />
+            Shared via Vaultr
+          </div>
+          <h1 className="text-2xl font-bold">Shared Personal Data</h1>
+          <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              {timeLeft}
+            </span>
+            <span className="flex items-center gap-1">
+              <Lock className="h-3.5 w-3.5" />
+              Encrypted
+            </span>
+          </div>
+        </div>
+
+        {/* Fields */}
+        {categories.map((cat, i) => {
+          const catFields = fields.filter(f => f.category === cat);
+          const Icon = CATEGORY_ICONS[cat] || FileText;
+
+          return (
+            <Card key={cat} className="animate-slide-up" style={{ animationDelay: `${i * 100}ms` }}>
+              <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <Shield className="h-5 w-5 text-green-600 dark:text-green-400" />
-                  Shared Data
+                  <Icon className="h-5 w-5 text-muted-foreground" />
+                  {CATEGORY_LABELS[cat] || cat}
                 </CardTitle>
-                <Badge
-                  variant={countdown.expired ? "destructive" : "secondary"}
-                  className="gap-1"
-                >
-                  <Clock className="h-3 w-3" />
-                  {countdown.expired ? "Expired" : countdown.label}
-                </Badge>
-              </div>
-              <CardDescription>
-                Viewed {data.viewCount} time{data.viewCount !== 1 ? "s" : ""}
-                {" · "}
-                Created{" "}
-                {new Date(data.createdAt * 1000).toLocaleDateString()}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {data.fields.map((field, i) => (
-                  <div key={i}>
-                    {i > 0 && <Separator className="mb-3" />}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          {field.label}
-                        </p>
-                        <p className="mt-1 text-sm font-medium break-all">
-                          {field.value}
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="shrink-0 h-8 w-8"
-                        onClick={() => copyValue(field.label, field.value)}
-                      >
-                        {copiedField === field.label ? (
-                          <Check className="h-3.5 w-3.5 text-green-500" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {catFields.map((field, j) => (
+                  <div key={field.id}>
+                    {j > 0 && <Separator className="my-3" />}
+                    <div className="py-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider">{field.label}</p>
+                      <p className="text-base font-medium mt-0.5">{field.value}</p>
                     </div>
                   </div>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          );
+        })}
 
-          <div className="rounded-lg border bg-muted/50 p-3 space-y-1.5 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <Lock className="h-3 w-3" />
-              Data was encrypted with AES-256-GCM and decrypted on the server
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Clock className="h-3 w-3" />
-              This link will expire on{" "}
-              {new Date(data.expiresAt * 1000).toLocaleString()}
-            </div>
-          </div>
+        {/* Footer */}
+        <div className="text-center py-8 space-y-3 animate-fade-in">
+          <Separator />
+          <p className="text-sm text-muted-foreground pt-4">
+            Shared securely via <span className="font-semibold">Vaultr</span>
+          </p>
+          <Link href="/">
+            <Button variant="outline" size="sm" className="gap-2">
+              <Shield className="h-3.5 w-3.5" />
+              Create Your Own Vault
+            </Button>
+          </Link>
         </div>
-      </main>
-    </div>
-  );
-}
-
-function ViewHeader() {
-  return (
-    <header className="border-b">
-      <div className="container mx-auto flex items-center justify-between h-14 px-4">
-        <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <Shield className="h-6 w-6 text-primary" />
-          <span className="font-bold text-lg">Vaultr</span>
-        </a>
-        <ThemeToggle />
       </div>
-    </header>
+    </div>
   );
 }

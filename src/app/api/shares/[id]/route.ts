@@ -1,70 +1,83 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getDb, saveDb, getOne, getAll, ShareRow, FileRow } from "@/lib/db";
-import { decrypt, verifyPassword } from "@/lib/crypto";
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { decrypt } from "@/lib/crypto";
+import bcrypt from "bcryptjs";
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const { id } = params;
-    const body = await request.json();
-    const { key, password } = body;
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const { id } = params;
+  const url = new URL(req.url);
+  const password = url.searchParams.get("password");
 
-    const db = await getDb();
-    const share = getOne<ShareRow>(db, "SELECT * FROM shares WHERE id = ?", [id]);
+  const share = await prisma.share.findUnique({ where: { id } });
 
-    if (!share) {
-      return NextResponse.json({ error: "Share not found" }, { status: 404 });
-    }
-
-    const now = Math.floor(Date.now() / 1000);
-    if (now > share.expires_at) {
-      db.run("DELETE FROM files WHERE share_id = ?", [id]);
-      db.run("DELETE FROM shares WHERE id = ?", [id]);
-      saveDb(db);
-      return NextResponse.json({ error: "This link has expired", expired: true }, { status: 410 });
-    }
-
-    if (share.password_hash) {
-      if (!password) {
-        return NextResponse.json({
-          requiresPassword: true,
-          expiresAt: share.expires_at,
-          createdAt: share.created_at,
-        }, { status: 401 });
-      }
-      if (!verifyPassword(password, share.password_hash)) {
-        return NextResponse.json({ error: "Incorrect password" }, { status: 403 });
-      }
-    }
-
-    if (!key) {
-      return NextResponse.json({ error: "Decryption key required" }, { status: 400 });
-    }
-
-    let fields;
-    try {
-      const decrypted = decrypt(share.encrypted_data, key, share.iv, share.auth_tag);
-      fields = JSON.parse(decrypted);
-    } catch {
-      return NextResponse.json({ error: "Invalid decryption key" }, { status: 400 });
-    }
-
-    const files = getAll<FileRow>(db, "SELECT id, filename, mimetype FROM files WHERE share_id = ?", [id]);
-
-    db.run("UPDATE shares SET view_count = view_count + 1 WHERE id = ?", [id]);
-    saveDb(db);
-
-    return NextResponse.json({
-      fields,
-      files: files.map(f => ({ id: f.id, filename: f.filename, mimetype: f.mimetype })),
-      expiresAt: share.expires_at,
-      createdAt: share.created_at,
-      viewCount: (share.view_count || 0) + 1,
-    });
-  } catch (error) {
-    console.error("Error fetching share:", error);
-    return NextResponse.json({ error: "Failed to fetch share" }, { status: 500 });
+  if (!share) {
+    return NextResponse.json({ error: "Share not found" }, { status: 404 });
   }
+
+  if (share.revoked) {
+    return NextResponse.json({ error: "This share has been revoked", expired: true }, { status: 410 });
+  }
+
+  if (new Date() > share.expiresAt) {
+    return NextResponse.json({ error: "This share has expired", expired: true }, { status: 410 });
+  }
+
+  if (share.password) {
+    if (!password) {
+      return NextResponse.json({ passwordRequired: true, expiresAt: share.expiresAt });
+    }
+    const valid = await bcrypt.compare(password, share.password);
+    if (!valid) {
+      return NextResponse.json({ error: "Invalid password", passwordRequired: true }, { status: 401 });
+    }
+  }
+
+  // Increment view count
+  await prisma.share.update({
+    where: { id },
+    data: { viewCount: { increment: 1 } },
+  });
+
+  // Fetch fields
+  const fieldIds = JSON.parse(share.fieldIds) as string[];
+  const fields = await prisma.vaultField.findMany({
+    where: { id: { in: fieldIds } },
+    orderBy: [{ category: "asc" }, { order: "asc" }],
+  });
+
+  const decryptedFields = fields.map((f) => ({
+    id: f.id,
+    category: f.category,
+    label: f.label,
+    value: decrypt(f.value),
+  }));
+
+  return NextResponse.json({
+    fields: decryptedFields,
+    expiresAt: share.expiresAt,
+    createdAt: share.createdAt,
+  });
+}
+
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const userId = (session.user as any).id;
+  const share = await prisma.share.findUnique({ where: { id: params.id } });
+
+  if (!share || share.userId !== userId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  await prisma.share.update({
+    where: { id: params.id },
+    data: { revoked: true },
+  });
+
+  return NextResponse.json({ success: true });
 }

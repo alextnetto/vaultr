@@ -6,10 +6,8 @@ type Theme = "dark" | "light" | "system";
 
 type ThemeProviderProps = {
   children: React.ReactNode;
-  attribute?: string;
   defaultTheme?: Theme;
-  enableSystem?: boolean;
-  disableTransitionOnChange?: boolean;
+  storageKey?: string;
 };
 
 type ThemeProviderState = {
@@ -25,31 +23,38 @@ const ThemeProviderContext = React.createContext<ThemeProviderState>({
 export function ThemeProvider({
   children,
   defaultTheme = "system",
-  enableSystem = true,
+  storageKey = "vaultr-theme",
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = React.useState<Theme>(defaultTheme);
 
   React.useEffect(() => {
+    const stored = localStorage.getItem(storageKey) as Theme;
+    if (stored) setTheme(stored);
+  }, [storageKey]);
+
+  React.useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove("light", "dark");
 
-    if (theme === "system" && enableSystem) {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light";
+    if (theme === "system") {
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
       root.classList.add(systemTheme);
       return;
     }
-
     root.classList.add(theme);
-  }, [theme, enableSystem]);
+  }, [theme]);
 
-  const value = { theme, setTheme };
+  const value = {
+    theme,
+    setTheme: (theme: Theme) => {
+      localStorage.setItem(storageKey, theme);
+      setTheme(theme);
+    },
+  };
 
   return (
-    <ThemeProviderContext.Provider value={value}>
+    <ThemeProviderContext.Provider {...props} value={value}>
       {children}
     </ThemeProviderContext.Provider>
   );
@@ -57,7 +62,6 @@ export function ThemeProvider({
 
 export const useTheme = () => {
   const context = React.useContext(ThemeProviderContext);
-  if (context === undefined)
-    throw new Error("useTheme must be used within a ThemeProvider");
+  if (context === undefined) throw new Error("useTheme must be used within a ThemeProvider");
   return context;
 };
