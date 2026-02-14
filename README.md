@@ -61,17 +61,58 @@ The encryption key in the URL fragment (`#key`) is **never sent to the server** 
     └── crypto.ts             # Encryption utilities
 ```
 
-## Security Notes
+## Roadmap
 
-This is a **proof of concept**. For production use, consider:
+### Near-term
+- [ ] Custom domains per user
+- [ ] OAuth login (Google, GitHub)
+- [ ] File/document uploads in vault
+- [ ] Share templates ("Send me your address" → requester fills a form)
+- [ ] Notification when share is viewed
+- [ ] Bulk share (multiple recipients, individual links)
 
-- Rate limiting on API endpoints
-- CSRF protection
-- Content Security Policy headers
-- Database encryption at rest
-- Secure file storage (S3, etc.)
-- Audit logging
-- Maximum share size limits
+### SOC 2 Compliance Path
+
+**Security**
+- [ ] Multi-factor authentication (TOTP/WebAuthn)
+- [ ] Rate limiting + brute force protection
+- [ ] CORS, CSP, and security headers
+- [ ] Vulnerability scanning (automated, CI/CD)
+- [ ] Penetration testing (third-party)
+- [ ] Incident response plan (documented)
+- [ ] Key management service (AWS KMS / HashiCorp Vault) — no hardcoded keys
+- [ ] Session management + forced logout
+
+**Availability**
+- [ ] Uptime monitoring + alerting
+- [ ] Multi-region deployment
+- [ ] Database backups with tested restores
+- [ ] Disaster recovery plan (documented)
+
+**Processing Integrity**
+- [ ] Full audit log — every access, share, revoke with timestamps, IPs
+- [ ] Data validation + integrity checks
+- [ ] Error handling that never leaks sensitive data
+
+**Confidentiality**
+- [ ] Data classification (PII tagging)
+- [ ] Auto-purge expired data (hard delete, not soft)
+- [ ] Encryption key rotation
+- [ ] Access restricted to minimum necessary (principle of least privilege)
+
+**Privacy**
+- [ ] Privacy policy + terms of service
+- [ ] Consent management
+- [ ] Right to delete (full account + data wipe)
+- [ ] Data processing agreements (DPA)
+- [ ] GDPR / LGPD compliance
+
+### Infrastructure
+- [ ] Migrate from SQLite to PostgreSQL
+- [ ] Migrate file storage to S3 (encrypted buckets)
+- [ ] CI/CD pipeline with security scanning
+- [ ] Staging environment
+- [ ] Log aggregation + SIEM
 
 ## License
 
