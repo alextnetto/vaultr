@@ -1,31 +1,25 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/db";
+import { registerUser } from "@/lib/auth.service";
+import { registerSchema } from "@/lib/validation";
 
 export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json();
+    const body = await req.json();
+    const parsed = registerSchema.safeParse(body);
 
-    if (!email || !password) {
-      return NextResponse.json({ error: "Email and password required" }, { status: 400 });
+    if (!parsed.success) {
+      const message = parsed.error.errors[0]?.message || "Invalid input";
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    if (password.length < 6) {
-      return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+    const result = await registerUser(parsed.data);
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return NextResponse.json({ error: "Email already registered" }, { status: 400 });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: { email, password: hashedPassword },
-    });
-
-    return NextResponse.json({ id: user.id, email: user.email });
-  } catch (error) {
+    return NextResponse.json(result.user);
+  } catch {
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
   }
 }

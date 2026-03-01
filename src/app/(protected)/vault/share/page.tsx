@@ -5,43 +5,34 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Shield, Share2, Copy, Check, Lock, ArrowLeft,
-  User, FileText, Phone, CreditCard, Link2, Clock
+  Shield, Copy, Check, Lock, ArrowLeft, Link2, Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 
-type VaultField = {
+type VaultItem = {
   id: string;
-  category: string;
   label: string;
   value: string;
+  type: string;
 };
 
-const CATEGORY_ICONS: Record<string, any> = {
-  identity: User,
-  documents: FileText,
-  contact: Phone,
-  financial: CreditCard,
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  identity: "Identity",
-  documents: "Documents",
-  contact: "Contact",
-  financial: "Financial",
-};
+const EXPIRY_OPTIONS = [
+  { value: "1h", label: "1 hour" },
+  { value: "24h", label: "24 hours" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+] as const;
 
 export default function CreateSharePage() {
   const { status } = useSession();
   const router = useRouter();
-  const [fields, setFields] = useState<VaultField[]>([]);
+  const [items, setItems] = useState<VaultItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expiry, setExpiry] = useState("24h");
   const [password, setPassword] = useState("");
@@ -56,32 +47,36 @@ export default function CreateSharePage() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      fetch("/api/vault").then(r => r.json()).then(data => {
-        setFields(data);
-        setLoading(false);
-      });
+      fetch("/api/vault")
+        .then((r) => r.json())
+        .then((data) => {
+          setItems(data);
+        })
+        .catch(() => {
+          toast.error("Failed to load vault items");
+        })
+        .finally(() => {
+          setLoading(false);
+        });
     }
   }, [status]);
 
-  const toggleField = (id: string) => {
+  const toggleItem = (id: string) => {
     const next = new Set(selectedIds);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setSelectedIds(next);
   };
 
-  const toggleCategory = (category: string) => {
-    const catFields = fields.filter(f => f.category === category);
-    const allSelected = catFields.every(f => selectedIds.has(f.id));
-    const next = new Set(selectedIds);
-    catFields.forEach(f => {
-      if (allSelected) next.delete(f.id);
-      else next.add(f.id);
-    });
-    setSelectedIds(next);
+  const toggleAll = () => {
+    if (selectedIds.size === items.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map((i) => i.id)));
+    }
   };
 
-  const createShare = async () => {
+  const createShareHandler = async () => {
     if (selectedIds.size === 0) return;
     setCreating(true);
     try {
@@ -89,14 +84,18 @@ export default function CreateSharePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fieldIds: Array.from(selectedIds),
+          itemIds: Array.from(selectedIds),
           expiresIn: expiry,
           password: password || undefined,
         }),
       });
-      const data = await res.json();
-      const link = `${window.location.origin}/s/${data.id}`;
-      setShareLink(link);
+      if (res.ok) {
+        const data = await res.json();
+        const link = `${window.location.origin}/s/${data.id}`;
+        setShareLink(link);
+      }
+    } catch {
+      toast.error("Failed to create share");
     } finally {
       setCreating(false);
     }
@@ -105,6 +104,7 @@ export default function CreateSharePage() {
   const copyLink = () => {
     navigator.clipboard.writeText(shareLink);
     setCopied(true);
+    toast.success("Link copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -118,9 +118,6 @@ export default function CreateSharePage() {
       </div>
     );
   }
-
-  // Group fields
-  const categories = Array.from(new Set(fields.map(f => f.category)));
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
@@ -137,13 +134,15 @@ export default function CreateSharePage() {
       <main className="container px-4 mx-auto max-w-4xl py-8 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/vault">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label="Back to vault">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <div>
             <h1 className="text-3xl font-bold">Create Share</h1>
-            <p className="text-muted-foreground mt-1">Select which fields to include in your share link</p>
+            <p className="text-muted-foreground mt-1">
+              Select items to include in your share link
+            </p>
           </div>
         </div>
 
@@ -154,7 +153,9 @@ export default function CreateSharePage() {
                 <Check className="h-5 w-5" />
                 Share Link Created!
               </CardTitle>
-              <CardDescription>Your share link is ready. Copy it and send it to anyone.</CardDescription>
+              <CardDescription>
+                Your share link is ready. Copy it and send it to anyone.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-2">
@@ -165,7 +166,13 @@ export default function CreateSharePage() {
                 </Button>
               </div>
               <div className="flex gap-4">
-                <Button onClick={() => { setShareLink(""); setSelectedIds(new Set()); }} variant="outline">
+                <Button
+                  onClick={() => {
+                    setShareLink("");
+                    setSelectedIds(new Set());
+                  }}
+                  variant="outline"
+                >
                   Create Another
                 </Button>
                 <Link href="/vault/shares">
@@ -176,60 +183,52 @@ export default function CreateSharePage() {
           </Card>
         ) : (
           <>
-            {/* Field Selection */}
-            {fields.length === 0 ? (
+            {items.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
-                  <p className="text-muted-foreground">No fields in your vault yet.</p>
+                  <p className="text-muted-foreground">No items in your vault yet.</p>
                   <Link href="/vault">
-                    <Button className="mt-4">Add Fields First</Button>
+                    <Button className="mt-4">Add Items First</Button>
                   </Link>
                 </CardContent>
               </Card>
             ) : (
               <>
-                {categories.map((cat, i) => {
-                  const catFields = fields.filter(f => f.category === cat);
-                  const allSelected = catFields.every(f => selectedIds.has(f.id));
-                  const Icon = CATEGORY_ICONS[cat] || FileText;
-
-                  return (
-                    <Card key={cat} className="animate-slide-up" style={{ animationDelay: `${i * 80}ms` }}>
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="flex items-center gap-2 text-lg">
-                            <Icon className="h-5 w-5 text-muted-foreground" />
-                            {CATEGORY_LABELS[cat] || cat}
-                          </CardTitle>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">Select all</span>
-                            <Switch checked={allSelected} onCheckedChange={() => toggleCategory(cat)} />
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-1">
-                        {catFields.map((field, j) => (
-                          <div key={field.id}>
-                            {j > 0 && <Separator className="my-2" />}
-                            <label className="flex items-center justify-between py-2 cursor-pointer hover:bg-muted/50 rounded-md px-2 -mx-2 transition-colors">
-                              <div>
-                                <p className="text-xs text-muted-foreground uppercase tracking-wider">{field.label}</p>
-                                <p className="text-sm font-medium">{field.value}</p>
-                              </div>
-                              <Switch
-                                checked={selectedIds.has(field.id)}
-                                onCheckedChange={() => toggleField(field.id)}
-                              />
-                            </label>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-
-                {/* Options */}
                 <Card className="animate-slide-up">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">Select Items</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Select all</span>
+                        <Switch
+                          checked={selectedIds.size === items.length}
+                          onCheckedChange={toggleAll}
+                        />
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="py-0 pb-2">
+                    {items.map((item, i) => (
+                      <div key={item.id}>
+                        {i > 0 && <Separator />}
+                        <label className="flex items-center justify-between py-3 cursor-pointer hover:bg-muted/50 rounded-md px-2 -mx-2 transition-colors">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                              {item.label}
+                            </p>
+                            <p className="text-sm font-medium truncate">{item.value}</p>
+                          </div>
+                          <Switch
+                            checked={selectedIds.has(item.id)}
+                            onCheckedChange={() => toggleItem(item.id)}
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card className="animate-slide-up" style={{ animationDelay: "80ms" }}>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <Clock className="h-5 w-5 text-muted-foreground" />
@@ -239,17 +238,19 @@ export default function CreateSharePage() {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Expiry</label>
-                      <Select value={expiry} onValueChange={setExpiry}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1h">1 hour</SelectItem>
-                          <SelectItem value="24h">24 hours</SelectItem>
-                          <SelectItem value="7d">7 days</SelectItem>
-                          <SelectItem value="30d">30 days</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="flex gap-1">
+                        {EXPIRY_OPTIONS.map((opt) => (
+                          <Button
+                            key={opt.value}
+                            variant={expiry === opt.value ? "default" : "outline"}
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => setExpiry(opt.value)}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium flex items-center gap-1.5">
@@ -266,14 +267,18 @@ export default function CreateSharePage() {
                   </CardContent>
                 </Card>
 
-                {/* Generate */}
-                <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
+                <div className="flex items-center justify-between p-4 rounded-lg border bg-card sticky bottom-4">
                   <div>
-                    <p className="font-medium">{selectedIds.size} field{selectedIds.size !== 1 ? "s" : ""} selected</p>
-                    <p className="text-sm text-muted-foreground">Expires in {expiry}</p>
+                    <p className="font-medium">
+                      {selectedIds.size} item{selectedIds.size !== 1 ? "s" : ""} selected
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Expires in{" "}
+                      {EXPIRY_OPTIONS.find((o) => o.value === expiry)?.label}
+                    </p>
                   </div>
                   <Button
-                    onClick={createShare}
+                    onClick={createShareHandler}
                     disabled={selectedIds.size === 0 || creating}
                     className="gap-2"
                     size="lg"

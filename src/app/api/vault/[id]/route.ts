@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { createShare, listShares } from "@/lib/share.service";
-import { createShareSchema } from "@/lib/validation";
+import { updateItem, deleteItem } from "@/lib/vault.service";
+import { vaultItemUpdateSchema } from "@/lib/validation";
 
-export async function POST(req: Request) {
+export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -12,32 +12,36 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const parsed = createShareSchema.safeParse(body);
+    const parsed = vaultItemUpdateSchema.safeParse(body);
 
     if (!parsed.success) {
       const message = parsed.error.errors[0]?.message || "Invalid input";
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const share = await createShare({
+    const item = await updateItem({
+      id: params.id,
       userId: session.user.id,
-      itemIds: parsed.data.itemIds,
-      expiresIn: parsed.data.expiresIn,
-      password: parsed.data.password,
+      ...parsed.data,
     });
-    return NextResponse.json(share, { status: 201 });
+    return NextResponse.json(item);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Something went wrong";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: 404 });
   }
 }
 
-export async function GET() {
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const shares = await listShares(session.user.id);
-  return NextResponse.json(shares);
+  try {
+    await deleteItem(params.id, session.user.id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Something went wrong";
+    return NextResponse.json({ error: message }, { status: 404 });
+  }
 }

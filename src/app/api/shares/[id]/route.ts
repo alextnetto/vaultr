@@ -1,83 +1,38 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
-import bcrypt from "bcryptjs";
+import { viewShare, revokeShare } from "@/lib/share.service";
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
-  const { id } = params;
   const url = new URL(req.url);
-  const password = url.searchParams.get("password");
+  const password = url.searchParams.get("password") || undefined;
 
-  const share = await prisma.share.findUnique({ where: { id } });
+  const result = await viewShare(params.id, password);
 
-  if (!share) {
-    return NextResponse.json({ error: "Share not found" }, { status: 404 });
-  }
-
-  if (share.revoked) {
-    return NextResponse.json({ error: "This share has been revoked", expired: true }, { status: 410 });
-  }
-
-  if (new Date() > share.expiresAt) {
-    return NextResponse.json({ error: "This share has expired", expired: true }, { status: 410 });
-  }
-
-  if (share.password) {
-    if (!password) {
-      return NextResponse.json({ passwordRequired: true, expiresAt: share.expiresAt });
-    }
-    const valid = await bcrypt.compare(password, share.password);
-    if (!valid) {
+  switch (result.status) {
+    case "not_found":
+      return NextResponse.json({ error: "Share not found" }, { status: 404 });
+    case "expired":
+      return NextResponse.json({ error: "This share has expired", expired: true }, { status: 410 });
+    case "password_required":
+      return NextResponse.json({ passwordRequired: true, expiresAt: result.expiresAt });
+    case "invalid_password":
       return NextResponse.json({ error: "Invalid password", passwordRequired: true }, { status: 401 });
-    }
+    case "ok":
+      return NextResponse.json(result.data);
   }
-
-  // Increment view count
-  await prisma.share.update({
-    where: { id },
-    data: { viewCount: { increment: 1 } },
-  });
-
-  // Fetch fields
-  const fieldIds = JSON.parse(share.fieldIds) as string[];
-  const fields = await prisma.vaultField.findMany({
-    where: { id: { in: fieldIds } },
-    orderBy: [{ category: "asc" }, { order: "asc" }],
-  });
-
-  const decryptedFields = fields.map((f) => ({
-    id: f.id,
-    category: f.category,
-    label: f.label,
-    value: decrypt(f.value),
-  }));
-
-  return NextResponse.json({
-    fields: decryptedFields,
-    expiresAt: share.expiresAt,
-    createdAt: share.createdAt,
-  });
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const userId = (session.user as any).id;
-  const share = await prisma.share.findUnique({ where: { id: params.id } });
-
-  if (!share || share.userId !== userId) {
+  try {
+    await revokeShare(params.id, session.user.id);
+    return NextResponse.json({ success: true });
+  } catch {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-
-  await prisma.share.update({
-    where: { id: params.id },
-    data: { revoked: true },
-  });
-
-  return NextResponse.json({ success: true });
 }
