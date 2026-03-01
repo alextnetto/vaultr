@@ -4,39 +4,51 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  Shield, Lock, Clock, AlertTriangle,
-  User, FileText, Phone, CreditCard, Eye
+  Shield, Lock, Clock, AlertTriangle, Copy, Check, Eye, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
-type SharedField = {
+type SharedItem = {
   id: string;
-  category: string;
   label: string;
   value: string;
+  type: string;
 };
 
-const CATEGORY_ICONS: Record<string, any> = {
-  identity: User,
-  documents: FileText,
-  contact: Phone,
-  financial: CreditCard,
-};
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
 
-const CATEGORY_LABELS: Record<string, string> = {
-  identity: "Identity",
-  documents: "Documents",
-  contact: "Contact",
-  financial: "Financial",
-};
+  const copy = () => {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Button variant="ghost" size="sm" onClick={copy} className="shrink-0">
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </Button>
+  );
+}
+
+function formatCountdown(expiresAt: string): string {
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  if (diff <= 0) return "Expired";
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+}
 
 export default function ViewSharePage() {
   const { id } = useParams();
-  const [fields, setFields] = useState<SharedField[]>([]);
+  const [items, setItems] = useState<SharedItem[]>([]);
   const [expiresAt, setExpiresAt] = useState("");
   const [error, setError] = useState("");
   const [expired, setExpired] = useState(false);
@@ -49,7 +61,9 @@ export default function ViewSharePage() {
     setLoading(true);
     setError("");
     try {
-      const url = pwd ? `/api/shares/${id}?password=${encodeURIComponent(pwd)}` : `/api/shares/${id}`;
+      const url = pwd
+        ? `/api/shares/${id}?password=${encodeURIComponent(pwd)}`
+        : `/api/shares/${id}`;
       const res = await fetch(url);
       const data = await res.json();
 
@@ -60,8 +74,8 @@ export default function ViewSharePage() {
         setPasswordRequired(true);
         if (data.error) setError(data.error);
         if (data.expiresAt) setExpiresAt(data.expiresAt);
-      } else if (data.fields) {
-        setFields(data.fields);
+      } else if (data.items) {
+        setItems(data.items);
         setExpiresAt(data.expiresAt);
         setPasswordRequired(false);
       } else if (data.error) {
@@ -78,28 +92,30 @@ export default function ViewSharePage() {
     fetchShare();
   }, [id]); // eslint-disable-line
 
-  // Countdown timer
   useEffect(() => {
     if (!expiresAt) return;
     const update = () => {
-      const diff = new Date(expiresAt).getTime() - Date.now();
-      if (diff <= 0) {
-        setTimeLeft("Expired");
-        setExpired(true);
-        return;
-      }
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff % 86400000) / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      if (d > 0) setTimeLeft(`${d}d ${h}h ${m}m`);
-      else if (h > 0) setTimeLeft(`${h}h ${m}m ${s}s`);
-      else setTimeLeft(`${m}m ${s}s`);
+      const remaining = formatCountdown(expiresAt);
+      setTimeLeft(remaining);
+      if (remaining === "Expired") setExpired(true);
     };
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [expiresAt]);
+
+  const downloadAll = () => {
+    const content = items
+      .map((item) => `${item.label}: ${item.value}`)
+      .join("\n");
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "vaultr-share.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) {
     return (
@@ -177,19 +193,15 @@ export default function ViewSharePage() {
     );
   }
 
-  // Group fields by category
-  const categories = Array.from(new Set(fields.map(f => f.category)));
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
       <div className="container px-4 mx-auto max-w-2xl py-8 space-y-6">
-        {/* Header */}
         <div className="text-center space-y-2 animate-fade-in">
           <div className="inline-flex items-center gap-2 rounded-full border bg-muted px-4 py-1.5 text-sm">
             <Shield className="h-3.5 w-3.5" />
             Shared via Vaultr
           </div>
-          <h1 className="text-2xl font-bold">Shared Personal Data</h1>
+          <h1 className="text-2xl font-bold">Shared Data</h1>
           <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />
@@ -202,35 +214,32 @@ export default function ViewSharePage() {
           </div>
         </div>
 
-        {/* Fields */}
-        {categories.map((cat, i) => {
-          const catFields = fields.filter(f => f.category === cat);
-          const Icon = CATEGORY_ICONS[cat] || FileText;
-
-          return (
-            <Card key={cat} className="animate-slide-up" style={{ animationDelay: `${i * 100}ms` }}>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Icon className="h-5 w-5 text-muted-foreground" />
-                  {CATEGORY_LABELS[cat] || cat}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {catFields.map((field, j) => (
-                  <div key={field.id}>
-                    {j > 0 && <Separator className="my-3" />}
-                    <div className="py-1">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider">{field.label}</p>
-                      <p className="text-base font-medium mt-0.5">{field.value}</p>
-                    </div>
+        <Card className="animate-slide-up">
+          <CardContent className="py-2">
+            {items.map((item, i) => (
+              <div key={item.id}>
+                {i > 0 && <Separator />}
+                <div className="flex items-center justify-between py-3 gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                      {item.label}
+                    </p>
+                    <p className="text-sm font-medium mt-0.5 break-all">{item.value}</p>
                   </div>
-                ))}
-              </CardContent>
-            </Card>
-          );
-        })}
+                  <CopyButton value={item.value} />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
-        {/* Footer */}
+        <div className="flex justify-center">
+          <Button variant="outline" className="gap-2" onClick={downloadAll}>
+            <Download className="h-4 w-4" />
+            Download All
+          </Button>
+        </div>
+
         <div className="text-center py-8 space-y-3 animate-fade-in">
           <Separator />
           <p className="text-sm text-muted-foreground pt-4">
