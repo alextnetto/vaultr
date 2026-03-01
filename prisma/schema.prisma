@@ -8,34 +8,37 @@ datasource db {
 }
 
 model User {
-  id        String       @id @default(cuid())
-  email     String       @unique
+  id        String      @id @default(cuid())
+  email     String      @unique
   password  String
-  vault     VaultField[]
+  items     VaultItem[]
   shares    Share[]
-  createdAt DateTime     @default(now())
+  createdAt DateTime    @default(now())
 }
 
-model VaultField {
+model VaultItem {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  category  String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   label     String
   value     String
-  order     Int      @default(0)
+  type      String   @default("text")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Share {
   id        String   @id @default(cuid())
   userId    String
-  user       User     @relation(fields: [userId], references: [id])
-  fieldIds  String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemIds   String
   password  String?
   expiresAt DateTime
   viewCount Int      @default(0)
   revoked   Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
