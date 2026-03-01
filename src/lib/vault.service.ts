@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { encrypt, decrypt } from "./crypto";
+import { deleteFile } from "./file.service";
 
 export type ItemType = "text" | "url" | "number" | "document";
 
@@ -90,6 +91,10 @@ export async function deleteItem(id: string, userId: string): Promise<void> {
   const existing = await prisma.vaultItem.findUnique({ where: { id } });
   if (!existing || existing.userId !== userId) {
     throw new Error("Item not found");
+  }
+
+  if (existing.type === "document") {
+    await deleteFile(id);
   }
 
   await prisma.vaultItem.delete({ where: { id } });

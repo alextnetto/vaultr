@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { encrypt, decrypt } from "./crypto";
+import { encrypt, decrypt, encryptBuffer, decryptBuffer } from "./crypto";
 
 describe("crypto", () => {
   describe("encrypt", () => {
@@ -56,6 +56,52 @@ describe("crypto", () => {
       const parts = encrypted.split(":");
       parts[2] = "0000" + parts[2].slice(4);
       expect(() => decrypt(parts.join(":"))).toThrow();
+    });
+  });
+
+  describe("encryptBuffer", () => {
+    it("returns a buffer larger than the input (IV + authTag + ciphertext)", () => {
+      const input = Buffer.from("hello world");
+      const encrypted = encryptBuffer(input);
+      expect(encrypted.length).toBeGreaterThan(input.length);
+      // At least 16 (IV) + 16 (authTag) + input length
+      expect(encrypted.length).toBeGreaterThanOrEqual(32 + input.length);
+    });
+
+    it("produces different output for the same input (random IV)", () => {
+      const input = Buffer.from("same content");
+      const a = encryptBuffer(input);
+      const b = encryptBuffer(input);
+      expect(a.equals(b)).toBe(false);
+    });
+  });
+
+  describe("decryptBuffer", () => {
+    it("recovers the original buffer", () => {
+      const original = Buffer.from("my secret file content");
+      const encrypted = encryptBuffer(original);
+      const decrypted = decryptBuffer(encrypted);
+      expect(decrypted.equals(original)).toBe(true);
+    });
+
+    it("recovers binary data", () => {
+      const original = Buffer.from([0x00, 0xff, 0x80, 0x7f, 0x01]);
+      const encrypted = encryptBuffer(original);
+      const decrypted = decryptBuffer(encrypted);
+      expect(decrypted.equals(original)).toBe(true);
+    });
+
+    it("recovers large buffers", () => {
+      const original = Buffer.alloc(100_000, 0xab);
+      const encrypted = encryptBuffer(original);
+      const decrypted = decryptBuffer(encrypted);
+      expect(decrypted.equals(original)).toBe(true);
+    });
+
+    it("throws on tampered data", () => {
+      const encrypted = encryptBuffer(Buffer.from("secret"));
+      encrypted[33] = encrypted[33] ^ 0xff; // flip a byte in the ciphertext
+      expect(() => decryptBuffer(encrypted)).toThrow();
     });
   });
 });

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  Shield, Lock, Clock, AlertTriangle, Copy, Check, Eye, Download,
+  Shield, Lock, Clock, AlertTriangle, Copy, Check, Eye, Download, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,32 @@ function CopyButton({ value }: { value: string }) {
     <Button variant="ghost" size="sm" onClick={copy} className="shrink-0">
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
     </Button>
+  );
+}
+
+function DocumentValue({ value, itemId }: { value: string; itemId: string }) {
+  let fileName = value;
+  let fileSize = "";
+  try {
+    const meta = JSON.parse(value);
+    fileName = meta.fileName;
+    const size = meta.fileSize;
+    fileSize = size < 1024 ? `${size}B` : size < 1048576 ? `${(size / 1024).toFixed(1)}KB` : `${(size / 1048576).toFixed(1)}MB`;
+  } catch {
+    // value is just a string
+  }
+  return (
+    <div className="flex items-center gap-2 mt-0.5">
+      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+      <span className="text-sm font-medium truncate">{fileName}</span>
+      {fileSize && <span className="text-xs text-muted-foreground">({fileSize})</span>}
+      <a href={`/api/vault/${itemId}/file`} download>
+        <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs">
+          <Download className="h-3.5 w-3.5" />
+          Download
+        </Button>
+      </a>
+    </div>
   );
 }
 
@@ -105,7 +131,8 @@ export default function ViewSharePage() {
   }, [expiresAt]);
 
   const downloadAll = () => {
-    const content = items
+    const textItems = items.filter((item) => item.type !== "document");
+    const content = textItems
       .map((item) => `${item.label}: ${item.value}`)
       .join("\n");
     const blob = new Blob([content], { type: "text/plain" });
@@ -224,9 +251,13 @@ export default function ViewSharePage() {
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">
                       {item.label}
                     </p>
-                    <p className="text-sm font-medium mt-0.5 break-all">{item.value}</p>
+                    {item.type === "document" ? (
+                      <DocumentValue value={item.value} itemId={item.id} />
+                    ) : (
+                      <p className="text-sm font-medium mt-0.5 break-all">{item.value}</p>
+                    )}
                   </div>
-                  <CopyButton value={item.value} />
+                  {item.type !== "document" && <CopyButton value={item.value} />}
                 </div>
               </div>
             ))}

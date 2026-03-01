@@ -26,3 +26,20 @@ export function decrypt(encryptedText: string): string {
   decrypted += decipher.final("utf8");
   return decrypted;
 }
+
+export function encryptBuffer(buffer: Buffer): Buffer {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([iv, authTag, encrypted]);
+}
+
+export function decryptBuffer(data: Buffer): Buffer {
+  const iv = data.subarray(0, 16);
+  const authTag = data.subarray(16, 32);
+  const encrypted = data.subarray(32);
+  const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+}

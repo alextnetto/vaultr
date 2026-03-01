@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Shield, Plus, Pencil, Trash2, Save, X, Share2,
   Lock, LogOut, ListChecks, ExternalLink, Hash, FileText, Type,
+  Upload, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +33,7 @@ const TYPE_OPTIONS = [
   { value: "text", label: "Text", icon: Type },
   { value: "url", label: "URL", icon: ExternalLink },
   { value: "number", label: "Number", icon: Hash },
-  { value: "document", label: "Document", icon: FileText },
+  { value: "document", label: "File", icon: FileText },
 ] as const;
 
 function TypeIcon({ type }: { type: string }) {
@@ -41,20 +42,43 @@ function TypeIcon({ type }: { type: string }) {
   return <Icon className="h-3.5 w-3.5 text-muted-foreground" />;
 }
 
-function ValueDisplay({ value, type }: { value: string; type: string }) {
-  if (type === "url") {
+function getDocumentDisplayValue(value: string): string {
+  try {
+    const meta = JSON.parse(value);
+    const size = meta.fileSize;
+    const sizeStr = size < 1024 ? `${size}B` : size < 1048576 ? `${(size / 1024).toFixed(1)}KB` : `${(size / 1048576).toFixed(1)}MB`;
+    return `${meta.fileName} (${sizeStr})`;
+  } catch {
+    return value;
+  }
+}
+
+function ValueDisplay({ item }: { item: VaultItem }) {
+  if (item.type === "document") {
+    return (
+      <div className="flex items-center gap-2">
+        <p className="text-sm font-medium truncate">{getDocumentDisplayValue(item.value)}</p>
+        <a href={`/api/vault/${item.id}/file`} download>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+        </a>
+      </div>
+    );
+  }
+  if (item.type === "url") {
     return (
       <a
-        href={value}
+        href={item.value}
         target="_blank"
         rel="noopener noreferrer"
         className="text-sm font-medium text-primary hover:underline truncate block"
       >
-        {value}
+        {item.value}
       </a>
     );
   }
-  return <p className="text-sm font-medium truncate">{value}</p>;
+  return <p className="text-sm font-medium truncate">{item.value}</p>;
 }
 
 export default function VaultPage() {
@@ -65,8 +89,10 @@ export default function VaultPage() {
   const [editValue, setEditValue] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newItem, setNewItem] = useState({ label: "", value: "", type: "text" });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -90,20 +116,34 @@ export default function VaultPage() {
   }, [status, fetchItems]);
 
   const addItem = async () => {
-    if (!newItem.label || !newItem.value) return;
+    if (!newItem.label) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/vault", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newItem),
-      });
-      if (res.ok) {
-        await fetchItems();
-        setAddDialogOpen(false);
-        setNewItem({ label: "", value: "", type: "text" });
-        toast.success("Saved");
+      if (newItem.type === "document") {
+        if (!selectedFile) return;
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("label", newItem.label);
+        const res = await fetch("/api/vault/upload", { method: "POST", body: formData });
+        if (!res.ok) {
+          const data = await res.json();
+          toast.error(data.error || "Failed to upload");
+          return;
+        }
+      } else {
+        if (!newItem.value) return;
+        const res = await fetch("/api/vault", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newItem),
+        });
+        if (!res.ok) return;
       }
+      await fetchItems();
+      setAddDialogOpen(false);
+      setNewItem({ label: "", value: "", type: "text" });
+      setSelectedFile(null);
+      toast.success("Saved");
     } catch {
       toast.error("Failed to save");
     } finally {
@@ -150,6 +190,8 @@ export default function VaultPage() {
     });
   };
 
+  const isAddDisabled = saving || !newItem.label || (newItem.type === "document" ? !selectedFile : !newItem.value);
+
   if (status === "loading" || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -190,13 +232,13 @@ export default function VaultPage() {
         </div>
       </header>
 
-      <main className="container px-4 mx-auto max-w-4xl py-8 space-y-6">
+      <main className="container px-4 mx-auto max-w-4xl py-6 sm:py-8 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Your Vault</h1>
-            <p className="text-muted-foreground mt-1 flex items-center gap-1.5">
+            <h1 className="text-2xl sm:text-3xl font-bold">Your Vault</h1>
+            <p className="text-muted-foreground mt-1 flex items-center gap-1.5 text-sm">
               <Lock className="h-3.5 w-3.5" />
-              All data encrypted with AES-256-GCM
+              Encrypted with AES-256-GCM
             </p>
           </div>
           <Button onClick={() => setAddDialogOpen(true)} className="gap-2">
@@ -207,7 +249,7 @@ export default function VaultPage() {
 
         {items.length === 0 ? (
           <Card className="animate-fade-in">
-            <CardContent className="py-16 text-center">
+            <CardContent className="py-12 sm:py-16 text-center">
               <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <h2 className="text-xl font-semibold mb-2">Your vault is empty</h2>
               <p className="text-muted-foreground mb-6">Add your first piece of data to get started.</p>
@@ -223,7 +265,7 @@ export default function VaultPage() {
               {items.map((item, i) => (
                 <div key={item.id}>
                   {i > 0 && <Separator />}
-                  <div className="flex items-center justify-between py-3 gap-4">
+                  <div className="flex items-center justify-between py-3 gap-2 sm:gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <TypeIcon type={item.type} />
@@ -243,12 +285,7 @@ export default function VaultPage() {
                               if (e.key === "Escape") setEditing(null);
                             }}
                           />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => saveEdit(item)}
-                            disabled={saving}
-                          >
+                          <Button size="sm" variant="ghost" onClick={() => saveEdit(item)} disabled={saving}>
                             <Save className="h-3.5 w-3.5" />
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
@@ -256,21 +293,23 @@ export default function VaultPage() {
                           </Button>
                         </div>
                       ) : (
-                        <ValueDisplay value={item.value} type={item.type} />
+                        <ValueDisplay item={item} />
                       )}
                     </div>
                     {editing !== item.id && (
                       <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setEditing(item.id);
-                            setEditValue(item.value);
-                          }}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+                        {item.type !== "document" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditing(item.id);
+                              setEditValue(item.value);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -305,45 +344,84 @@ export default function VaultPage() {
             className="space-y-4 py-2"
           >
             <div className="space-y-2">
-              <label className="text-sm font-medium">Label</label>
-              <Input
-                placeholder="e.g., Bank Account, Passport Number"
-                value={newItem.label}
-                onChange={(e) => setNewItem({ ...newItem, label: e.target.value })}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Value</label>
-              <Input
-                placeholder="Enter value"
-                value={newItem.value}
-                onChange={(e) => setNewItem({ ...newItem, value: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
               <label className="text-sm font-medium">Type</label>
-              <div className="flex gap-1">
+              <div className="grid grid-cols-4 gap-1">
                 {TYPE_OPTIONS.map((opt) => (
                   <Button
                     key={opt.value}
                     type="button"
                     variant={newItem.type === opt.value ? "default" : "outline"}
                     size="sm"
-                    className="gap-1.5 flex-1"
-                    onClick={() => setNewItem({ ...newItem, type: opt.value })}
+                    className="gap-1 text-xs sm:text-sm sm:gap-1.5"
+                    onClick={() => {
+                      setNewItem({ ...newItem, type: opt.value, value: "" });
+                      setSelectedFile(null);
+                    }}
                   >
                     <opt.icon className="h-3.5 w-3.5" />
-                    {opt.label}
+                    <span className="hidden sm:inline">{opt.label}</span>
                   </Button>
                 ))}
               </div>
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Label</label>
+              <Input
+                placeholder="e.g., Bank Account, Passport"
+                value={newItem.label}
+                onChange={(e) => setNewItem({ ...newItem, label: e.target.value })}
+                autoFocus
+              />
+            </div>
+            {newItem.type === "document" ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">File</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setSelectedFile(file);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full gap-2 h-20 border-dashed"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {selectedFile ? (
+                    <div className="text-center">
+                      <FileText className="h-5 w-5 mx-auto mb-1" />
+                      <p className="text-xs truncate max-w-[200px]">{selectedFile.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(selectedFile.size / 1024).toFixed(1)}KB
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted-foreground">
+                      <Upload className="h-5 w-5 mx-auto mb-1" />
+                      <p className="text-xs">Click to select file (max 5MB)</p>
+                    </div>
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Value</label>
+                <Input
+                  placeholder="Enter value"
+                  value={newItem.value}
+                  onChange={(e) => setNewItem({ ...newItem, value: e.target.value })}
+                />
+              </div>
+            )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setAddDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving || !newItem.label || !newItem.value}>
+              <Button type="submit" disabled={isAddDisabled}>
                 {saving ? "Saving..." : "Add Item"}
               </Button>
             </DialogFooter>
