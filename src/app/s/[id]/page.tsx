@@ -34,7 +34,7 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-function DocumentValue({ value, itemId }: { value: string; itemId: string }) {
+function DocumentValue({ value, itemId, shareId }: { value: string; itemId: string; shareId: string }) {
   let fileName = value;
   let fileSize = "";
   try {
@@ -50,7 +50,7 @@ function DocumentValue({ value, itemId }: { value: string; itemId: string }) {
       <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
       <span className="text-sm font-medium truncate">{fileName}</span>
       {fileSize && <span className="text-xs text-muted-foreground">({fileSize})</span>}
-      <a href={`/api/vault/${itemId}/file`} download>
+      <a href={`/api/shares/${shareId}/file/${itemId}`} download>
         <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs">
           <Download className="h-3.5 w-3.5" />
           Download
@@ -252,7 +252,7 @@ export default function ViewSharePage() {
                       {item.label}
                     </p>
                     {item.type === "document" ? (
-                      <DocumentValue value={item.value} itemId={item.id} />
+                      <DocumentValue value={item.value} itemId={item.id} shareId={id as string} />
                     ) : (
                       <p className="text-sm font-medium mt-0.5 break-all">{item.value}</p>
                     )}
