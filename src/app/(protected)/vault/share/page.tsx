@@ -51,6 +51,11 @@ export default function CreateSharePage() {
         .then((r) => r.json())
         .then((data) => {
           setItems(data);
+        })
+        .catch(() => {
+          toast.error("Failed to load vault items");
+        })
+        .finally(() => {
           setLoading(false);
         });
     }
@@ -129,7 +134,7 @@ export default function CreateSharePage() {
       <main className="container px-4 mx-auto max-w-4xl py-8 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/vault">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label="Back to vault">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>

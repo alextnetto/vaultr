@@ -28,7 +28,7 @@ beforeEach(async () => {
 
 describe("registerUser", () => {
   it("rejects empty email", async () => {
-    const result = await registerUser({ email: "", password: "123456" });
+    const result = await registerUser({ email: "", password: "12345678" });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error).toBe("Email and password required");
@@ -44,11 +44,11 @@ describe("registerUser", () => {
     }
   });
 
-  it("rejects password shorter than 6 characters", async () => {
-    const result = await registerUser({ email: "test@example.com", password: "12345" });
+  it("rejects password shorter than 8 characters", async () => {
+    const result = await registerUser({ email: "test@example.com", password: "1234567" });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe("Password must be at least 6 characters");
+      expect(result.error).toBe("Password must be at least 8 characters");
     }
   });
 
@@ -66,7 +66,7 @@ describe("registerUser", () => {
     const result = await registerUser({ email: "dupe@example.com", password: "password456" });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe("Email already registered");
+      expect(result.error).toBe("Unable to create account");
     }
   });
 

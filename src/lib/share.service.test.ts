@@ -60,9 +60,9 @@ vi.mock("./db", () => ({
       }),
     },
     vaultItem: {
-      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
+      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] }; userId?: string } }) => {
         return vaultItems
-          .filter((i) => where.id.in.includes(i.id))
+          .filter((i) => where.id.in.includes(i.id) && (!where.userId || i.userId === where.userId))
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
       }),
     },
@@ -81,6 +81,13 @@ beforeEach(() => {
 });
 
 describe("createShare", () => {
+  beforeEach(() => {
+    vaultItems.push(
+      { id: "item_1", userId: "user_1", label: "API Key", value: "enc_sk-123", type: "text", createdAt: new Date(), updatedAt: new Date() },
+      { id: "item_2", userId: "user_1", label: "Website", value: "enc_https://example.com", type: "url", createdAt: new Date(), updatedAt: new Date() },
+    );
+  });
+
   it("creates a share with correct expiry", async () => {
     const before = new Date();
     const result = await createShare({
@@ -100,6 +107,12 @@ describe("createShare", () => {
     await expect(
       createShare({ userId: "user_1", itemIds: [], expiresIn: "24h" }),
     ).rejects.toThrow("At least one item must be selected");
+  });
+
+  it("rejects items not owned by user", async () => {
+    await expect(
+      createShare({ userId: "user_999", itemIds: ["item_1"], expiresIn: "24h" }),
+    ).rejects.toThrow("One or more items not found");
   });
 
   it("hashes password if provided", async () => {
@@ -143,6 +156,13 @@ describe("createShare", () => {
 });
 
 describe("listShares", () => {
+  beforeEach(() => {
+    vaultItems.push(
+      { id: "item_1", userId: "user_1", label: "API Key", value: "enc_sk-123", type: "text", createdAt: new Date(), updatedAt: new Date() },
+      { id: "item_2", userId: "user_1", label: "Website", value: "enc_https://example.com", type: "url", createdAt: new Date(), updatedAt: new Date() },
+    );
+  });
+
   it("returns empty array when no shares exist", async () => {
     const result = await listShares("user_1");
     expect(result).toEqual([]);
@@ -245,6 +265,12 @@ describe("viewShare", () => {
 });
 
 describe("revokeShare", () => {
+  beforeEach(() => {
+    vaultItems.push(
+      { id: "item_1", userId: "user_1", label: "API Key", value: "enc_sk-123", type: "text", createdAt: new Date(), updatedAt: new Date() },
+    );
+  });
+
   it("revokes a share", async () => {
     await createShare({ userId: "user_1", itemIds: ["item_1"], expiresIn: "24h" });
     await revokeShare(shares[0].id, "user_1");

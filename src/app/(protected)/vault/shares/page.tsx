@@ -56,6 +56,11 @@ export default function SharesPage() {
         .then((r) => r.json())
         .then((data) => {
           setShares(data);
+        })
+        .catch(() => {
+          toast.error("Failed to load shares");
+        })
+        .finally(() => {
           setLoading(false);
         });
     }
@@ -98,7 +103,7 @@ export default function SharesPage() {
       <main className="container px-4 mx-auto max-w-4xl py-8 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/vault">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label="Back to vault">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
@@ -193,6 +198,7 @@ export default function SharesPage() {
                               variant="ghost"
                               className="text-destructive hover:text-destructive"
                               onClick={() => revokeShare(share.id)}
+                              aria-label="Revoke share"
                             >
                               <XCircle className="h-3.5 w-3.5" />
                             </Button>
@@ -221,7 +227,7 @@ function CopyShareButton({ onClick }: { onClick: () => void }) {
   };
 
   return (
-    <Button size="sm" variant="ghost" onClick={handleClick}>
+    <Button size="sm" variant="ghost" onClick={handleClick} aria-label="Copy share link">
       {copied ? (
         <Check className="h-3.5 w-3.5" />
       ) : (

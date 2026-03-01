@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { listItems, createItem } from "@/lib/vault.service";
+import { vaultItemSchema } from "@/lib/validation";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -20,8 +21,15 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { label, value, type } = await req.json();
-    const item = await createItem({ userId: session.user.id, label, value, type });
+    const body = await req.json();
+    const parsed = vaultItemSchema.safeParse(body);
+
+    if (!parsed.success) {
+      const message = parsed.error.errors[0]?.message || "Invalid input";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    const item = await createItem({ userId: session.user.id, ...parsed.data });
     return NextResponse.json(item, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Something went wrong";

@@ -14,6 +14,11 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    env: {
+      ENCRYPTION_KEY: "test-encryption-key-for-vitest-runs",
+      NEXTAUTH_SECRET: "test-nextauth-secret-for-vitest",
+      NEXTAUTH_URL: "http://localhost:3000",
+    },
     include: ["src/**/*.test.{ts,tsx}"],
     coverage: {
       reporter: ["text", "lcov"],

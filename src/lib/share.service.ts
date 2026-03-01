@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { decrypt } from "./crypto";
 
+const BCRYPT_ROUNDS = 12;
+
 export type ExpiryOption = "1h" | "24h" | "7d" | "30d";
 
 export type CreateShareInput = {
@@ -58,8 +60,17 @@ export async function createShare(input: CreateShareInput): Promise<ShareRespons
     throw new Error("At least one item must be selected");
   }
 
+  const ownedItems = await prisma.vaultItem.findMany({
+    where: { id: { in: itemIds }, userId },
+    select: { id: true },
+  });
+
+  if (ownedItems.length !== itemIds.length) {
+    throw new Error("One or more items not found");
+  }
+
   const expiresAt = computeExpiry(expiresIn);
-  const hashedPassword = password ? await bcrypt.hash(password, 10) : null;
+  const hashedPassword = password ? await bcrypt.hash(password, BCRYPT_ROUNDS) : null;
 
   const share = await prisma.share.create({
     data: {
@@ -121,11 +132,6 @@ export async function viewShare(
     }
   }
 
-  await prisma.share.update({
-    where: { id: shareId },
-    data: { viewCount: { increment: 1 } },
-  });
-
   const itemIds = JSON.parse(share.itemIds) as string[];
   const items = await prisma.vaultItem.findMany({
     where: { id: { in: itemIds } },
@@ -138,6 +144,11 @@ export async function viewShare(
     value: decrypt(item.value),
     type: item.type,
   }));
+
+  await prisma.share.update({
+    where: { id: shareId },
+    data: { viewCount: { increment: 1 } },
+  });
 
   return {
     status: "ok",

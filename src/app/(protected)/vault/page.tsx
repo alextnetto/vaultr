@@ -59,7 +59,7 @@ function ValueDisplay({ item }: { item: VaultItem }) {
       <div className="flex items-center gap-2">
         <p className="text-sm font-medium truncate">{getDocumentDisplayValue(item.value)}</p>
         <a href={`/api/vault/${item.id}/file`} download>
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label="Download file">
             <Download className="h-3.5 w-3.5" />
           </Button>
         </a>
@@ -225,7 +225,7 @@ export default function VaultPage() {
               </Button>
             </Link>
             <ThemeToggle />
-            <Button variant="ghost" size="icon" onClick={() => signOut({ callbackUrl: "/" })}>
+            <Button variant="ghost" size="icon" onClick={() => signOut({ callbackUrl: "/" })} aria-label="Sign out">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
@@ -280,15 +280,16 @@ export default function VaultPage() {
                             onChange={(e) => setEditValue(e.target.value)}
                             className="h-8 text-sm"
                             autoFocus
+                            aria-label="Edit value"
                             onKeyDown={(e) => {
                               if (e.key === "Enter") saveEdit(item);
                               if (e.key === "Escape") setEditing(null);
                             }}
                           />
-                          <Button size="sm" variant="ghost" onClick={() => saveEdit(item)} disabled={saving}>
+                          <Button size="sm" variant="ghost" onClick={() => saveEdit(item)} disabled={saving} aria-label="Save">
                             <Save className="h-3.5 w-3.5" />
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(null)} aria-label="Cancel edit">
                             <X className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -306,6 +307,7 @@ export default function VaultPage() {
                               setEditing(item.id);
                               setEditValue(item.value);
                             }}
+                            aria-label="Edit"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -315,6 +317,7 @@ export default function VaultPage() {
                           variant="ghost"
                           className="text-destructive hover:text-destructive"
                           onClick={() => deleteItemHandler(item)}
+                          aria-label="Delete"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>

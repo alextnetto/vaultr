@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { updateItem, deleteItem } from "@/lib/vault.service";
+import { vaultItemUpdateSchema } from "@/lib/validation";
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -11,12 +12,17 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
   try {
     const body = await req.json();
+    const parsed = vaultItemUpdateSchema.safeParse(body);
+
+    if (!parsed.success) {
+      const message = parsed.error.errors[0]?.message || "Invalid input";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
     const item = await updateItem({
       id: params.id,
       userId: session.user.id,
-      label: body.label,
-      value: body.value,
-      type: body.type,
+      ...parsed.data,
     });
     return NextResponse.json(item);
   } catch (error) {

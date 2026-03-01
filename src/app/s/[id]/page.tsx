@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -28,7 +28,7 @@ function CopyButton({ value }: { value: string }) {
   };
 
   return (
-    <Button variant="ghost" size="sm" onClick={copy} className="shrink-0">
+    <Button variant="ghost" size="sm" onClick={copy} className="shrink-0" aria-label="Copy to clipboard">
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
     </Button>
   );
@@ -83,7 +83,7 @@ export default function ViewSharePage() {
   const [loading, setLoading] = useState(true);
   const [timeLeft, setTimeLeft] = useState("");
 
-  const fetchShare = async (pwd?: string) => {
+  const fetchShare = useCallback(async (pwd?: string) => {
     setLoading(true);
     setError("");
     try {
@@ -112,11 +112,11 @@ export default function ViewSharePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     fetchShare();
-  }, [id]); // eslint-disable-line
+  }, [fetchShare]);
 
   useEffect(() => {
     if (!expiresAt) return;

@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 
+const BCRYPT_ROUNDS = 12;
+
 export type RegisterInput = {
   email: string;
   password: string;
@@ -17,16 +19,16 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
     return { success: false, error: "Email and password required", status: 400 };
   }
 
-  if (password.length < 6) {
-    return { success: false, error: "Password must be at least 6 characters", status: 400 };
+  if (password.length < 8) {
+    return { success: false, error: "Password must be at least 8 characters", status: 400 };
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    return { success: false, error: "Email already registered", status: 400 };
+    return { success: false, error: "Unable to create account", status: 400 };
   }
 
-  const hashedPassword = await bcrypt.hash(password, 12);
+  const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const user = await prisma.user.create({
     data: { email, password: hashedPassword },
   });
