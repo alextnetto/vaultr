@@ -27,15 +27,36 @@ describe("HomePage", () => {
     expect(hrefs).toContain("/register");
   });
 
-  it("renders three feature cards", () => {
+  it("renders all six feature cards", () => {
     render(<HomePage />);
     expect(screen.getByText("Encrypted Vault")).toBeInTheDocument();
     expect(screen.getByText("Selective Sharing")).toBeInTheDocument();
     expect(screen.getByText("Expiring Links")).toBeInTheDocument();
+    expect(screen.getByText("Any Data Type")).toBeInTheDocument();
+    expect(screen.getByText("Zero Friction")).toBeInTheDocument();
+    expect(screen.getByText("Free & Private")).toBeInTheDocument();
   });
 
   it("renders the Vaultr brand", () => {
     render(<HomePage />);
     expect(screen.getAllByText("Vaultr").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders the how-it-works section", () => {
+    render(<HomePage />);
+    expect(screen.getByText("How it works")).toBeInTheDocument();
+    expect(screen.getByText("Create your vault")).toBeInTheDocument();
+    expect(screen.getByText("Store your data")).toBeInTheDocument();
+    expect(screen.getByText("Share with a link")).toBeInTheDocument();
+  });
+
+  it("renders the CTA section", () => {
+    render(<HomePage />);
+    expect(screen.getByText(/ready to take control/i)).toBeInTheDocument();
+  });
+
+  it("renders AES-256 badge", () => {
+    render(<HomePage />);
+    expect(screen.getByText("AES-256 encrypted")).toBeInTheDocument();
   });
 });
