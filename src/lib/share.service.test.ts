@@ -153,6 +153,32 @@ describe("createShare", () => {
     expect(daysDiff).toBeGreaterThanOrEqual(6.9);
     expect(daysDiff).toBeLessThanOrEqual(7.1);
   });
+
+  it("computes 1h expiry correctly", async () => {
+    const before = new Date();
+    const result = await createShare({
+      userId: "user_1",
+      itemIds: ["item_1"],
+      expiresIn: "1h",
+    });
+
+    const hoursDiff = (result.expiresAt.getTime() - before.getTime()) / 3600000;
+    expect(hoursDiff).toBeGreaterThanOrEqual(0.9);
+    expect(hoursDiff).toBeLessThanOrEqual(1.1);
+  });
+
+  it("computes 30d expiry correctly", async () => {
+    const before = new Date();
+    const result = await createShare({
+      userId: "user_1",
+      itemIds: ["item_1"],
+      expiresIn: "30d",
+    });
+
+    const daysDiff = (result.expiresAt.getTime() - before.getTime()) / 86400000;
+    expect(daysDiff).toBeGreaterThanOrEqual(29.9);
+    expect(daysDiff).toBeLessThanOrEqual(30.1);
+  });
 });
 
 describe("listShares", () => {
@@ -261,6 +287,22 @@ describe("viewShare", () => {
 
     const result = await viewShare(shares[0].id, "correct");
     expect(result.status).toBe("ok");
+  });
+
+  it("does not increment view count when password is required but not provided", async () => {
+    await createShare({ userId: "user_1", itemIds: ["item_1"], expiresIn: "24h", password: "secret" });
+
+    const result = await viewShare(shares[0].id);
+    expect(result.status).toBe("password_required");
+    expect(shares[0].viewCount).toBe(0);
+  });
+
+  it("does not increment view count when password is wrong", async () => {
+    await createShare({ userId: "user_1", itemIds: ["item_1"], expiresIn: "24h", password: "correct" });
+
+    const result = await viewShare(shares[0].id, "wrong");
+    expect(result.status).toBe("invalid_password");
+    expect(shares[0].viewCount).toBe(0);
   });
 });
 

@@ -55,6 +55,10 @@ vi.mock("./crypto", () => ({
   decrypt: vi.fn((text: string) => text.replace("enc_", "")),
 }));
 
+vi.mock("./file.service", () => ({
+  deleteFile: vi.fn(async () => {}),
+}));
+
 beforeEach(() => {
   items.length = 0;
   idCounter = 0;
@@ -192,6 +196,16 @@ describe("updateItem", () => {
       updateItem({ id: "nonexistent", userId: "user_1", value: "x" }),
     ).rejects.toThrow("Item not found");
   });
+
+  it("trims whitespace on the label field", async () => {
+    const result = await updateItem({
+      id: "item_1",
+      userId: "user_1",
+      label: "  My Label  ",
+    });
+
+    expect(result.label).toBe("My Label");
+  });
 });
 
 describe("deleteItem", () => {
@@ -211,5 +225,16 @@ describe("deleteItem", () => {
 
   it("rejects deletion of non-existent item", async () => {
     await expect(deleteItem("nonexistent", "user_1")).rejects.toThrow("Item not found");
+  });
+
+  it("calls deleteFile when deleting a document-type item", async () => {
+    const { deleteFile } = await import("./file.service");
+    items.length = 0;
+    idCounter = 0;
+    await createItem({ userId: "user_1", label: "My Doc", value: "file-meta", type: "document" });
+
+    await deleteItem("item_1", "user_1");
+
+    expect(deleteFile).toHaveBeenCalledWith("item_1");
   });
 });
